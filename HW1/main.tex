@@ -120,15 +120,15 @@ Second, WLOG, we can first look at the 4 hexes enclosed by the red line. If B cr
 
 \section{Question 3}
 
-For $\text{Connect}(m,\ n,\ k,\ p,\ q+1)$, black can first play additional chess arbitrary, and follow the optimal strategy of $\text{Connect}(m,\ n,\ k,\ p,\ q)$. If the optimal strategy places the chess on the arbitrarily placed chess, just placed another chess arbitrary. In conclusion, because the additional chess won't harm black, $\text{Connect}(m,\ n,\ k,\ p,\ q+1)$ for Black is no worse than that in $\text{Connect}(m,\ n,\ k,\ p,\ q)$.
+For $\text{Connect}(m,\ n,\ k,\ p,\ q+1)$, black can first play additional chess arbitrary, and follow the optimal strategy of $\text{Connect}(m,\ n,\ k,\ p,\ q)$. If the optimal strategy places the chess on the previous placed chess, just placed another chess arbitrary. In conclusion, because the additional chess won't harm black, $\text{Connect}(m,\ n,\ k,\ p,\ q+1)$ for Black is no worse than that in $\text{Connect}(m,\ n,\ k,\ p,\ q)$.
 
 \section{Question 4}
 
 Connect$(6, \ 2, \ 2)$ and Hex can be both ultra-weakly solved with no win for White by strategy-stealing. 
 
-We first look at (b), (c) and (e), we can notice that if we swap color of black and white, the board will all be identical before swapping, thus, we can use same technique, that is, strategy-stealing to prove that (b), (c) and (e) can be solved ultra-weakly.
+We first look at (b), (c) and (e), we can notice that if we swap color of black and white, the board will all be identical before swapping, thus, we can use same technique, which is strategy-stealing to prove that (b), (c) and (e) can be solved ultra-weakly.
 
-For (a) and (d), because after swapping color, the board is different, we can't use strategy-stealing. In conclusion, I think it's impossible to prove that (a) and (d) can be solved ultra-weakly.
+For (a) and (d), after swapping color, the board is different, so we can't use strategy-stealing. In conclusion, I think it's impossible to prove that (a) and (d) can be solved ultra-weakly.
 
 
 \end{document}
