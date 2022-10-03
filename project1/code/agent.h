@@ -177,6 +177,71 @@ private:
 };
 
 
+class vanilla_greedy_slider : public random_agent {
+public:
+	vanilla_greedy_slider(const std::string& args = "") : random_agent("name=slide role=slider " + args),
+		opcode({ 0, 1, 2, 3 }) {}
+
+	virtual action take_action(const board& before) {
+		board::reward max_reward = -1;
+		int max_op;
+		for (int op : opcode) {
+			board::reward reward = board(before).slide(op);
+			if(reward >= max_reward){
+				max_reward = reward;
+				max_op = op;
+			}
+		}
+		if(max_reward == -1){
+			return action();
+		} else {
+			return action::slide(max_op);
+		}
+	}
+
+private:
+	std::array<int, 4> opcode;
+};
+
+
+class forbid_greedy_slider : public random_agent {
+public:
+	forbid_greedy_slider(const std::string& args = "") : random_agent("name=slide role=slider " + args),
+		opcode({ 0, 1, 3 }), alter_opcode({ 2 }) {}
+
+	virtual action take_action(const board& before) {
+		board::reward max_reward = -1;
+		int max_op;
+		for (int op : opcode) {
+			board::reward reward = board(before).slide(op);
+			if(reward >= max_reward){
+				max_reward = reward;
+				max_op = op;
+			}
+		}
+		if(max_reward == -1){
+			max_reward = -1;
+			for (int op : alter_opcode) {
+				board::reward reward = board(before).slide(op);
+				if(reward >= max_reward){
+					max_reward = reward;
+					max_op = op;
+				}
+			}
+			if(max_reward != -1){
+				return action::slide(max_op);
+			}
+			return action();
+		} else {
+			return action::slide(max_op);
+		}
+	}
+
+private:
+	std::array<int, 3> opcode;
+	std::array<int, 1> alter_opcode;
+};
+
 /**
  * random player, i.e., slider
  * select a legal action randomly

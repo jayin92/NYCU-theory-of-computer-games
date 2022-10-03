@@ -21,6 +21,11 @@
 \usepackage{amssymb}
 \usepackage{titling}
 
+\usepackage{pdftexcmds}
+\usepackage{catchfile}
+\usepackage{ifluatex}
+\usepackage{ifplatform}
+
 \usepackage[breakable, listings, skins, minted]{tcolorbox}
 \usepackage{etoolbox}
 \setminted{fontsize=\footnotesize}
@@ -62,8 +67,16 @@ heightrounded, % to avoid spurious underfull messages
 \author{110550088 李杰穎}
 \date{\today}
 
+
 \setCJKmainfont{Noto Serif TC}
+
+\iflinux
 \setmonofont[Mapping=tex-text]{Cascadia Code}
+\fi
+
+\ifwindows
+\setmonofont[Mapping=tex-text]{Consolas}
+\fi
 
 \XeTeXlinebreaklocale "zh"             %這兩行一定要加，中文才能自動換行
 \XeTeXlinebreakskip = 0pt plus 1pt     %這兩行一定要加，中文才能自動換行
