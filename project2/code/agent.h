@@ -80,23 +80,92 @@ public:
 		if (meta.find("alpha") != meta.end())
 			alpha = float(meta["alpha"]);
 	}
+
+	float board_value(const board& b){
+		 // 0 ~ 3 are four rows, 4 ~ 7 are four columns.
+		float value = 0;
+		for(int i=0;i<4;i++){
+			int tuple = 0;
+			for(int j=0;j<4;j++){
+				tuple <<= 4;
+				tuple ^= board::ttoi(b[i][j]);
+			}
+			value += net[i][tuple];
+		}
+		for(int i=4;i<8;i++){
+			int tuple = 0;
+			for(int j=0;j<4;j++){
+				tuple <<= 4;
+				tuple ^= board::ttoi(b[j][i-4]);
+			}
+			value += net[i][tuple];
+		}
+
+		return value;		
+	}
+
+	void update_net(const board& b, float delta){
+		for(int i=0;i<4;i++){
+			int tuple = 0;
+			for(int j=0;j<4;j++){
+				tuple <<= 4;
+				tuple ^= board::ttoi(b[i][j]);
+			}
+			net[i][tuple] += delta;
+		}
+		for(int i=4;i<8;i++){
+			int tuple = 0;
+			for(int j=0;j<4;j++){
+				tuple <<= 4;
+				tuple ^= board::ttoi(b[j][i-4]);
+			}
+			net[i][tuple] += delta;
+		}
+	}
 	virtual void open_episode(const std::string& flag = "") {
-
+		stats.clear();
 	}
+
 	virtual void close_episode(const std::string& flag = "") {
-
+		int sz = stats.size();
+		float delta = - alpha * board_value(stats[sz-1].first);
+		update_net(stats[sz-1].first, delta);
+		for(int i=sz-2;i>=0;i--){
+			float delta = alpha * (stats[i+1].second + board_value(stats[i+1].first) - board_value(stats[i].first));
+			update_net(stats[i].first, delta);
+		}
 	}
+
+
 	virtual action take_action(const board& before) {
 		std::vector<int> opcode = {0, 1, 2, 3};
 		std::vector<float> score = {0, 0, 0, 0};
-		double max_value = std::numeric_limits<double>::min();
+		float max_value = std::numeric_limits<float>::min();
+		float max_reward = -1;
 		int best_action = -1;
 
 		for(auto i: {0, 1, 2, 3}){
-			
+			board after(before);
+			board::reward reward = after.slide(i);
+			float total = reward + board_value(after);
+			if(reward != -1 and total > max_value){
+				max_reward = reward;
+				max_value = total;
+				best_action = i;
+			}
 		}
-		return action();
+		if(best_action != -1){
+			board after(before);
+			after.slide(best_action);
+			stats.emplace_back(after, max_reward);
+			return action::slide(best_action);
+		} else {
+			return action();
+		}
 	}
+
+
+
 	virtual bool check_for_win(const board& b) {
 		return false;
 	}
@@ -133,6 +202,7 @@ protected:
 
 protected:
 	std::vector<weight> net;
+	std::vector<std::pair<board, float>> stats;
 	float alpha;
 };
 
