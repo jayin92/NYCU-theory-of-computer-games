@@ -19,6 +19,8 @@
 #include "action.h"
 #include "weight.h"
 
+using namespace std;
+
 class agent {
 public:
 	agent(const std::string& args = "") {
@@ -160,7 +162,7 @@ public:
 			board after(before);
 			board::reward reward = after.slide(i);
 			float total = reward + board_value(after);
-			if(reward != -1 and total > max_value){
+			if(reward != -1 and (total > max_value or max_value == std::numeric_limits<float>::min())){
 				max_reward = reward;
 				max_value = total;
 				best_action = i;
@@ -181,6 +183,168 @@ public:
 	}
 
 	virtual ~weight_agent() {
+		if (meta.find("save") != meta.end())
+			save_weights(meta["save"]);
+	}
+
+protected:
+	virtual void init_weights(const std::string& info) {
+		std::string res = info; // comma-separated sizes, e.g., "65536,65536"
+		for (char& ch : res)
+			if (!std::isdigit(ch)) ch = ' ';
+		std::stringstream in(res);
+		for (size_t size; in >> size; net.emplace_back(size));
+	}
+	virtual void load_weights(const std::string& path) {
+		std::ifstream in(path, std::ios::in | std::ios::binary);
+		if (!in.is_open()) std::exit(-1);
+		uint32_t size;
+		in.read(reinterpret_cast<char*>(&size), sizeof(size));
+		net.resize(size);
+		for (weight& w : net) in >> w;
+		in.close();
+	}
+	virtual void save_weights(const std::string& path) {
+		std::ofstream out(path, std::ios::out | std::ios::binary | std::ios::trunc);
+		if (!out.is_open()) std::exit(-1);
+		uint32_t size = net.size();
+		out.write(reinterpret_cast<char*>(&size), sizeof(size));
+		for (weight& w : net) out << w;
+		out.close();
+	}
+
+protected:
+	std::vector<weight> net;
+	std::vector<state> stats;
+	float alpha;
+};
+
+
+class iso_weight_agent : public agent {
+public:
+	iso_weight_agent(const std::string& args = "") : agent(args), alpha(0) {
+		if (meta.find("init") != meta.end())
+			init_weights(meta["init"]);
+		if (meta.find("load") != meta.end())
+			load_weights(meta["load"]);
+		if (meta.find("alpha") != meta.end())
+			alpha = float(meta["alpha"]);
+	}
+
+	vector<vector<int>> tuples = {
+		{0, 1, 2, 4, 5,  6},
+		{1, 2, 5, 6, 9, 13},
+		{0, 1, 2, 3, 4,  5},
+		{0, 1, 5, 6, 7, 10}
+	};
+
+	float board_value(const board& b){
+		board tmp(b);
+		 // 0 ~ 3 are four rows, 4 ~ 7 are four columns.
+		float value = 0;
+		// rotate
+		for(int r=0;r<4;r++){
+			int tuple_idx = 0;
+			for(auto tuple: tuples){
+				int feature = 0;
+				for(auto idx: tuple){
+					feature <<= 4;
+					feature ^= tmp(idx);
+				}
+				value += net[tuple_idx++][feature];
+			}
+			tmp.rotate(1);
+		}
+		tmp.reverse();
+		for(int r=0;r<4;r++){
+			int tuple_idx = 0;
+			for(auto tuple: tuples){
+				int feature = 0;
+				for(auto idx: tuple){
+					feature <<= 4;
+					feature ^= tmp(idx);
+				}
+				value += net[tuple_idx++][feature];
+			}
+			tmp.rotate(1);
+		}
+
+		return value;		
+	}
+
+	void update_net(const board& b, float delta){
+		board tmp(b);
+		// rotate
+		for(int r=0;r<4;r++){
+			int tuple_idx = 0;
+			for(auto tuple: tuples){
+				int feature = 0;
+				for(auto idx: tuple){
+					feature <<= 4;
+					feature ^= tmp(idx);
+				}
+				net[tuple_idx++][feature] += delta;
+			}
+			tmp.rotate(1);
+		}
+		tmp.reverse();
+		for(int r=0;r<4;r++){
+			int tuple_idx = 0;
+			for(auto tuple: tuples){
+				int feature = 0;
+				for(auto idx: tuple){
+					feature <<= 4;
+					feature ^= tmp(idx);
+				}
+				net[tuple_idx++][feature] += delta;
+			}
+			tmp.rotate(1);
+		}
+	}
+	
+	virtual void open_episode(const std::string& flag = "") {
+		stats.clear();
+	}
+
+	virtual void close_episode(const std::string& flag = "") {
+		int sz = stats.size();
+		float delta = -1.0f * alpha * board_value(stats[sz-1].next);
+		update_net(stats[sz-1].next, delta);
+		for(int i=sz-1;i>=1;i--){
+			float delta = alpha * (stats[i].reward + board_value(stats[i].next) - board_value(stats[i-1].next));
+			update_net(stats[i-1].next, delta);
+		}
+	}
+
+
+	virtual action take_action(const board& before) {
+		float max_value = std::numeric_limits<float>::min();
+		float max_reward = -1;
+		int best_action = -1;
+
+		for(auto i: {3, 2, 1, 0}){
+			board after(before);
+			board::reward reward = after.slide(i);
+			float total = reward + board_value(after);
+			if(reward != -1 and (total > max_value or max_value == std::numeric_limits<float>::min())){
+				max_reward = reward;
+				max_value = total;
+				best_action = i;
+			}
+		}
+
+		if(best_action != -1){
+			board after(before);
+			after.slide(best_action);
+			stats.emplace_back(before, after, max_reward);
+			return action::slide(best_action);
+		} else {
+			return action();
+		}
+	}
+
+
+	virtual ~iso_weight_agent() {
 		if (meta.find("save") != meta.end())
 			save_weights(meta["save"]);
 	}

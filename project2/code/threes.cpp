@@ -61,7 +61,7 @@ int main(int argc, const char* argv[]) {
 		if (stats.is_finished()) stats.summary();
 	}
 
-	weight_agent slide(slide_args);
+	iso_weight_agent slide(slide_args);
 	random_placer place(place_args);
 
 	while (!stats.is_finished()) {
