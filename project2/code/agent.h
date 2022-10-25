@@ -255,7 +255,7 @@ public:
 			}
 			tmp.rotate(1);
 		}
-		tmp.reverse();
+		tmp.reflect_vertical();
 		for(int r=0;r<4;r++){
 			int tuple_idx = 0;
 			for(auto tuple: tuples){
@@ -287,7 +287,7 @@ public:
 			}
 			tmp.rotate(1);
 		}
-		tmp.reverse();
+		tmp.reflect_vertical();
 		for(int r=0;r<4;r++){
 			int tuple_idx = 0;
 			for(auto tuple: tuples){
