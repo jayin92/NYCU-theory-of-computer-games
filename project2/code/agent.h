@@ -70,6 +70,18 @@ protected:
 /**
  * base agent for agents with weight tables and a learning rate
  */
+
+class state {
+public:
+	board cur, next;
+	float reward;
+	state(const board& _cur, const board& _next, float _reward){
+		cur = _cur;
+		next = _next;
+		reward = _reward;
+	}
+};
+
 class weight_agent : public agent {
 public:
 	weight_agent(const std::string& args = "") : agent(args), alpha(0) {
@@ -81,6 +93,7 @@ public:
 			alpha = float(meta["alpha"]);
 	}
 
+
 	float board_value(const board& b){
 		 // 0 ~ 3 are four rows, 4 ~ 7 are four columns.
 		float value = 0;
@@ -88,7 +101,7 @@ public:
 			int tuple = 0;
 			for(int j=0;j<4;j++){
 				tuple <<= 4;
-				tuple ^= board::ttoi(b[i][j]);
+				tuple ^= b[i][j];
 			}
 			value += net[i][tuple];
 		}
@@ -96,7 +109,7 @@ public:
 			int tuple = 0;
 			for(int j=0;j<4;j++){
 				tuple <<= 4;
-				tuple ^= board::ttoi(b[j][i-4]);
+				tuple ^= b[j][i-4];
 			}
 			value += net[i][tuple];
 		}
@@ -109,7 +122,7 @@ public:
 			int tuple = 0;
 			for(int j=0;j<4;j++){
 				tuple <<= 4;
-				tuple ^= board::ttoi(b[i][j]);
+				tuple ^= b[i][j];
 			}
 			net[i][tuple] += delta;
 		}
@@ -117,29 +130,28 @@ public:
 			int tuple = 0;
 			for(int j=0;j<4;j++){
 				tuple <<= 4;
-				tuple ^= board::ttoi(b[j][i-4]);
+				tuple ^= b[j][i-4];
 			}
 			net[i][tuple] += delta;
 		}
 	}
+	
 	virtual void open_episode(const std::string& flag = "") {
 		stats.clear();
 	}
 
 	virtual void close_episode(const std::string& flag = "") {
 		int sz = stats.size();
-		float delta = - alpha * board_value(stats[sz-1].first);
-		update_net(stats[sz-1].first, delta);
-		for(int i=sz-2;i>=0;i--){
-			float delta = alpha * (stats[i+1].second + board_value(stats[i+1].first) - board_value(stats[i].first));
-			update_net(stats[i].first, delta);
+		float delta = -1.0f * alpha * board_value(stats[sz-1].next);
+		update_net(stats[sz-1].next, delta);
+		for(int i=sz-1;i>=1;i--){
+			float delta = alpha * (stats[i].reward + board_value(stats[i].next) - board_value(stats[i-1].next));
+			update_net(stats[i-1].next, delta);
 		}
 	}
 
 
 	virtual action take_action(const board& before) {
-		std::vector<int> opcode = {0, 1, 2, 3};
-		std::vector<float> score = {0, 0, 0, 0};
 		float max_value = std::numeric_limits<float>::min();
 		float max_reward = -1;
 		int best_action = -1;
@@ -157,18 +169,17 @@ public:
 		if(best_action != -1){
 			board after(before);
 			after.slide(best_action);
-			stats.emplace_back(after, max_reward);
+			stats.emplace_back(before, after, max_reward);
 			return action::slide(best_action);
 		} else {
 			return action();
 		}
 	}
 
-
-
 	virtual bool check_for_win(const board& b) {
 		return false;
 	}
+
 	virtual ~weight_agent() {
 		if (meta.find("save") != meta.end())
 			save_weights(meta["save"]);
@@ -202,7 +213,7 @@ protected:
 
 protected:
 	std::vector<weight> net;
-	std::vector<std::pair<board, float>> stats;
+	std::vector<state> stats;
 	float alpha;
 };
 
