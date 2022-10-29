@@ -9,6 +9,7 @@ train:
 	./threes --total=100000 --block=1000 --limit=1000 --slide="init=16777216,16777216,16777216,16777216 save=weights.bin alpha=0.0045"
 	./threes --total=1000 --slide="load=weights.bin alpha=0" --save="stats.txt"
 judge:
+	./threes --total=1000 --slide="load=weights.bin alpha=0" --save="stats.txt"
 	cp stats.txt ../judge/
 	../judge/threes-judge --load=stats.txt --judge="version=2"
 clean:

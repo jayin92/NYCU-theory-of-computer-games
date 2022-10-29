@@ -15,6 +15,7 @@
 #include <type_traits>
 #include <algorithm>
 #include <fstream>
+#include <cassert>
 #include "board.h"
 #include "action.h"
 #include "weight.h"
@@ -229,8 +230,10 @@ public:
 			load_weights(meta["load"]);
 		if (meta.find("alpha") != meta.end())
 			alpha = float(meta["alpha"]);
+		
+		build_iso_tuples();		
 	}
-
+	
 	vector<vector<int>> tuples = {
 		{0, 1, 2, 4, 5,  6},
 		{1, 2, 5, 6, 9, 13},
@@ -238,67 +241,60 @@ public:
 		{0, 1, 5, 6, 7, 10}
 	};
 
-	float board_value(const board& b){
-		board tmp(b);
-		 // 0 ~ 3 are four rows, 4 ~ 7 are four columns.
-		float value = 0;
-		// rotate
-		for(int r=0;r<4;r++){
-			int tuple_idx = 0;
-			for(auto tuple: tuples){
-				int feature = 0;
+	vector<vector<int>> iso_tuples;
+	
+	void build_iso_tuples(){
+		board b;
+		for(int i=0;i<16;i++) b(i) = i;
+		for(auto tuple: tuples){
+			board tmp(b);
+			for(int r=0;r<4;r++){
+				vector<int> tmp_idx;
 				for(auto idx: tuple){
-					feature <<= 4;
-					feature ^= tmp(idx);
+					tmp_idx.push_back(tmp(idx));
 				}
-				value += net[tuple_idx++][feature];
+				iso_tuples.push_back(tmp_idx);
+				tmp.rotate(1);
 			}
-			tmp.rotate(1);
+			tmp.reflect_vertical();
+			for(int r=0;r<4;r++){
+				vector<int> tmp_idx;
+				for(auto idx: tuple){
+					tmp_idx.push_back(tmp(idx));
+				}
+				iso_tuples.push_back(tmp_idx);
+				tmp.rotate(1);
+			}
 		}
-		tmp.reflect_vertical();
-		for(int r=0;r<4;r++){
-			int tuple_idx = 0;
-			for(auto tuple: tuples){
-				int feature = 0;
-				for(auto idx: tuple){
-					feature <<= 4;
-					feature ^= tmp(idx);
-				}
-				value += net[tuple_idx++][feature];
+	}
+
+	float board_value(const board& b){
+		float value = 0;
+		
+		// rotate
+		int tuple_idx = 0;
+		for(auto tuple: iso_tuples){
+			int feature = 0;
+			for(auto idx: tuple){
+				feature <<= 4;
+				feature ^= b(idx);
 			}
-			tmp.rotate(1);
+			value += net[tuple_idx++/8][feature];
 		}
 
-		return value;		
+		return value;
 	}
 
 	void update_net(const board& b, float delta){
-		board tmp(b);
 		// rotate
-		for(int r=0;r<4;r++){
-			int tuple_idx = 0;
-			for(auto tuple: tuples){
-				int feature = 0;
-				for(auto idx: tuple){
-					feature <<= 4;
-					feature ^= tmp(idx);
-				}
-				net[tuple_idx++][feature] += delta;
+		int tuple_idx = 0;
+		for(auto tuple: iso_tuples){
+			int feature = 0;
+			for(auto idx: tuple){
+				feature <<= 4;
+				feature ^= b(idx);
 			}
-			tmp.rotate(1);
-		}
-		tmp.reflect_vertical();
-		for(int r=0;r<4;r++){
-			int tuple_idx = 0;
-			for(auto tuple: tuples){
-				int feature = 0;
-				for(auto idx: tuple){
-					feature <<= 4;
-					feature ^= tmp(idx);
-				}
-				net[tuple_idx++][feature] += delta;
-			}
-			tmp.rotate(1);
+			net[tuple_idx++/8][feature] += delta;
 		}
 	}
 	
