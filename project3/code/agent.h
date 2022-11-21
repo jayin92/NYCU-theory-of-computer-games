@@ -101,19 +101,18 @@ private:
 
 class mctsNode {
 public:
-	mctsNode(const board& state, const board::piece_type player) : parent(nullptr), chosen_action(), state(state), visit(0), win(0), end_state(false), player(player) {}
+	mctsNode(const board& state, const board::piece_type player) : parent(nullptr), chosen_action(), state(state), visit(0), win(0), expand_idx(0), end_state(false), player(player) {}
 	mctsNode(mctsNode* parent, const action::place& action, const board& state, const bool end_state, const board::piece_type player) : parent(parent), chosen_action(action), 
-	state(state), visit(0), win(0),
-	end_state(end_state), player(player) {}
+	state(state), visit(0), win(0),	expand_idx(0), end_state(end_state), player(player) {}
 	~mctsNode() {
 		for (auto& child : children)
 			delete child;
 	}
 
-	double UCB1() const {
+	double UCB1() {
 		if (visit == 0)
 			return 1e9;
-		return double(win) / visit + sqrt((double)2 * log(parent->visit) / visit);
+		return (double)win / (double)visit + sqrt((double)2 * (double)log(parent->visit) / double(visit));
 	}
 
 	mctsNode* parent;
@@ -121,6 +120,7 @@ public:
 	board state;
 	int visit;
 	int win;
+	int expand_idx;
 	bool end_state;
 	board::piece_type player;
 	std::vector<mctsNode*> children;
@@ -136,12 +136,19 @@ public:
 		if (role() == "white") who = board::white;
 		if (who == board::empty)
 			throw std::invalid_argument("invalid role: " + role());
+		root = new mctsNode(board(), (who == board::black ? board::white : board::black));
+		real_root = root;
 		for (size_t i = 0; i < black_space.size(); i++){
 			black_space[i] = action::place(i, board::black);
 			white_space[i] = action::place(i, board::white);
 		}
-		if (meta.find("T") != meta.end())
+		if (meta.find("T") != meta.end()){
 			T = std::stoi(meta["T"]);
+		}
+	}
+
+	~mctsPlayer() {
+		delete real_root;
 	}
 
 	virtual action take_action(const board& state) {
@@ -150,13 +157,28 @@ public:
 	}
 
 	action mcts(int num_of_simulations, const board& state){
-		mctsNode* root = new mctsNode(state, (who == board::black ? board::white : board::black));
+		bool in_tree = false;
+		for(auto i: root->children){
+			if(i->state == state){
+				root = i;
+				root->parent = nullptr;
+				in_tree = true;				
+				break;
+			}
+		}
+
+		if(!in_tree){
+			delete real_root;
+			root = new mctsNode(state, (who == board::black ? board::white : board::black));
+			real_root = root;
+		}
+
 		while(num_of_simulations --){
+			mctsNode* node = root;
 			// std::cout << root -> visit << " " << root -> win << std::endl;
 			// std::cout << num_of_simulations << std::endl;
 			// selction
-			mctsNode* node = root;
-			while(node->children.size() != 0){
+			while(node->children.size() != 0 && (int)node->children.size() == node->expand_idx){
 				double max_UCB1 = -1e9;
 				mctsNode* max_node = nullptr;
 				for(auto& child : node->children){
@@ -164,15 +186,13 @@ public:
 					if(UCB1 > max_UCB1){
 						max_UCB1 = UCB1;
 						max_node = child;
-						if(UCB1 == 1e9)
-							break;
 					}
 				}
 				node = max_node;
 			}
 
 			// expansion
-			if(node->end_state == false){
+			if(node->end_state == false && (int)node->children.size() == 0){
 				bool no_legal_move = true;
 				if(node->player == board::black){
 					std::shuffle(white_space.begin(), white_space.end(), engine);
@@ -199,8 +219,11 @@ public:
 			}
 
 			// simulation
-			bool is_win;
+			board::piece_type winner;
 			if(node->end_state == false){
+				int idx = node->expand_idx;
+				node->expand_idx++;
+				node = node->children[idx];
 				board::piece_type player = node->player;
 				board cur_state = node->state;
 				while(true){
@@ -227,20 +250,19 @@ public:
 						}
 					}
 					if(no_legal_move){
-						is_win = (player == who);
+						winner = player;
 						break;
 					}
 					player = (player == board::black ? board::white : board::black);
 				}
 			} else {
-				is_win = (who == node->player);
+				winner = node->player;
 			}
 			
 			// backpropagation
 			while(node != nullptr){
 				node->visit++;
-				if(is_win)
-					node->win++;
+				node->win += (winner == who);
 				node = node->parent;
 			}
 		}
@@ -248,18 +270,17 @@ public:
 		double max_UCB1 = -1e9;
 		mctsNode* max_node = nullptr;
 		for(auto& child : root->children){
-			double UCB1 = child->UCB1();
+			double UCB1 = (double)child->win / (double)child->visit;
 			if(UCB1 > max_UCB1){
 				max_UCB1 = UCB1;
 				max_node = child;
 			}
 		}
 		if(max_node == nullptr){
-			delete root;
 			return action();
 		}
 		action::place action = max_node->chosen_action;
-		delete root;
+		root = max_node;
 		return action;
 	}
 
@@ -269,5 +290,7 @@ public:
 	std::vector<action::place> black_space;
 	std::vector<action::place> white_space;
 	board::piece_type who;
+	mctsNode* root;
+	mctsNode* real_root;
 	std::string white_args;
 };
