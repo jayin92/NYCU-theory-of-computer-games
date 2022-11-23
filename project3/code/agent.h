@@ -270,7 +270,7 @@ public:
 		double max_UCB1 = -1e9;
 		mctsNode* max_node = nullptr;
 		for(auto& child : root->children){
-			double UCB1 = (double)child->win / (double)child->visit;
+			double UCB1 = (double)child->visit;
 			if(UCB1 > max_UCB1){
 				max_UCB1 = UCB1;
 				max_node = child;
