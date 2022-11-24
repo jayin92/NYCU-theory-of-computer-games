@@ -15,6 +15,7 @@
 #include <type_traits>
 #include <algorithm>
 #include <fstream>
+#include <thread>
 #include "board.h"
 #include "action.h"
 
@@ -136,8 +137,6 @@ public:
 		if (role() == "white") who = board::white;
 		if (who == board::empty)
 			throw std::invalid_argument("invalid role: " + role());
-		root = new mctsNode(board(), (who == board::black ? board::white : board::black));
-		real_root = root;
 		for (size_t i = 0; i < black_space.size(); i++){
 			black_space[i] = action::place(i, board::black);
 			white_space[i] = action::place(i, board::white);
@@ -145,32 +144,76 @@ public:
 		if (meta.find("T") != meta.end()){
 			T = std::stoi(meta["T"]);
 		}
+
+		if (meta.find("parallel") != meta.end()){
+			parallel = std::stoi(meta["parallel"]);
+		}
+
+		for(int i=0;i<parallel;i++){
+			roots.push_back(new mctsNode(board(), (who == board::black ? board::white : board::black)));
+		}
 	}
 
 	~mctsPlayer() {
-		delete real_root;
+		for(auto i: roots) delete i;
 	}
 
 	virtual action take_action(const board& state) {
-		action action = mcts(T, state);
-		return action;
+		// action action = mcts(T, state);
+		std::vector<std::thread> threads;
+		for(int i=0;i<parallel;i++){
+			threads.push_back(std::thread(&mctsPlayer::mcts, this, state, i));
+		}
+		for(int i=0;i<parallel;i++){
+			threads[i].join();
+		}
+		int max_visit = 0;
+		action best_action = action();
+		std::map<action::place, int> action_visit;
+
+		for(auto root: roots){
+			for(auto i: root->children){
+				action_visit[i->chosen_action] += i->visit;
+			}
+			// std::cout << max_visit << std::endl;
+		}
+		for(auto i: action_visit){
+			if(i.second > max_visit){
+				max_visit = i.second;
+				best_action = i.first;
+			}
+		}
+
+		for(int j=0;j<parallel;j++){
+			for(auto i: roots[j]->children){
+				if(i->chosen_action == best_action){
+					roots[j] = i;
+					i->parent = nullptr;
+					break;
+				}
+			}
+		}
+		return best_action;
 	}
 
-	action mcts(int num_of_simulations, const board& state){
+	void mcts(const board state, int thread_idx){
+		int num_of_simulations = T;
+		mctsNode* root = roots[thread_idx];
 		bool in_tree = false;
 		for(auto i: root->children){
 			if(i->state == state){
 				root = i;
 				root->parent = nullptr;
-				in_tree = true;				
+				in_tree = true;
+				roots[thread_idx] = root;
 				break;
 			}
 		}
 
 		if(!in_tree){
-			delete real_root;
-			root = new mctsNode(state, (who == board::black ? board::white : board::black));
-			real_root = root;
+			delete roots[thread_idx];
+			roots[thread_idx] = new mctsNode(state, (who == board::black ? board::white : board::black));
+			root = roots[thread_idx];
 		}
 
 		while(num_of_simulations --){
@@ -194,9 +237,11 @@ public:
 			// expansion
 			if(node->end_state == false && (int)node->children.size() == 0){
 				bool no_legal_move = true;
+				auto tmp(node->player == board::black ? white_space : black_space);
+				std::shuffle(tmp.begin(), tmp.end(), engine);
 				if(node->player == board::black){
-					std::shuffle(white_space.begin(), white_space.end(), engine);
-					for (const action::place& move : white_space) {
+					// std::shuffle(white_space.begin(), white_space.end(), engine);
+					for (const action::place& move : tmp) {
 						board after = node->state;
 						if (move.apply(after) == board::legal){
 							node->children.push_back(new mctsNode(node, move, after, false, board::white));
@@ -204,8 +249,8 @@ public:
 						}
 					}
 				} else {
-					std::shuffle(black_space.begin(), black_space.end(), engine);
-					for (const action::place& move : black_space) {
+					// std::shuffle(black_space.begin(), black_space.end(), engine);
+					for (const action::place& move : tmp) {
 						board after = node->state;
 						if (move.apply(after) == board::legal){
 							node->children.push_back(new mctsNode(node, move, after, false, board::black));
@@ -228,9 +273,10 @@ public:
 				board cur_state = node->state;
 				while(true){
 					bool no_legal_move = true;
+					auto tmp(player == board::black ? white_space : black_space);
+					std::shuffle(tmp.begin(), tmp.end(), engine);
 					if(player == board::black){
-						std::shuffle(white_space.begin(), white_space.end(), engine);
-						for (const action::place& move : white_space) {
+						for (const action::place& move : tmp) {
 							board after = cur_state;
 							if (move.apply(after) == board::legal){
 								cur_state = after;
@@ -239,8 +285,7 @@ public:
 							}
 						}
 					} else {
-						std::shuffle(black_space.begin(), black_space.end(), engine);
-						for (const action::place& move : black_space) {
+						for (const action::place& move : tmp) {
 							board after = cur_state;
 							if (move.apply(after) == board::legal){
 								cur_state = after;
@@ -266,31 +311,15 @@ public:
 				node = node->parent;
 			}
 		}
-
-		double max_UCB1 = -1e9;
-		mctsNode* max_node = nullptr;
-		for(auto& child : root->children){
-			double UCB1 = (double)child->visit;
-			if(UCB1 > max_UCB1){
-				max_UCB1 = UCB1;
-				max_node = child;
-			}
-		}
-		if(max_node == nullptr){
-			return action();
-		}
-		action::place action = max_node->chosen_action;
-		root = max_node;
-		return action;
 	}
 
 
 
 	int T = 100;
+	int parallel = 1;
 	std::vector<action::place> black_space;
 	std::vector<action::place> white_space;
+	std::vector<mctsNode*> roots;
 	board::piece_type who;
-	mctsNode* root;
-	mctsNode* real_root;
 	std::string white_args;
 };
