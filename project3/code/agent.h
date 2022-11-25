@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <fstream>
 #include <thread>
+#include <cassert>
 #include "board.h"
 #include "action.h"
 
@@ -159,7 +160,6 @@ public:
 	}
 
 	virtual action take_action(const board& state) {
-		// action action = mcts(T, state);
 		std::vector<std::thread> threads;
 		for(int i=0;i<parallel;i++){
 			threads.push_back(std::thread(&mctsPlayer::mcts, this, state, i));
@@ -167,17 +167,17 @@ public:
 		for(int i=0;i<parallel;i++){
 			threads[i].join();
 		}
-		int max_visit = 0;
-		action best_action = action();
+		action::place best_action = action();
 		std::map<action::place, int> action_visit;
-
-		for(auto root: roots){
-			for(auto i: root->children){
-				action_visit[i->chosen_action] += i->visit;
+		for(mctsNode* root: roots){
+			for(mctsNode* i: root->children){
+				action_visit[i->chosen_action] += i -> visit;
 			}
-			// std::cout << max_visit << std::endl;
 		}
-		for(auto i: action_visit){
+		std::vector<std::pair<action::place, int>> action_visit_vec(action_visit.begin(), action_visit.end());
+		std::shuffle(action_visit_vec.begin(), action_visit_vec.end(), engine);
+		int max_visit = 0;
+		for(auto const& i: action_visit_vec){
 			if(i.second > max_visit){
 				max_visit = i.second;
 				best_action = i.first;
@@ -193,6 +193,7 @@ public:
 				}
 			}
 		}
+
 		return best_action;
 	}
 
