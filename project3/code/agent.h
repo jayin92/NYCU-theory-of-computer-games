@@ -214,8 +214,6 @@ public:
 				delete i;
 			}
 		}
-		// root->children.clear();
-		// delete root;
 		root = tmp_node;
 
 		if(!in_tree){
@@ -322,8 +320,6 @@ public:
 			}
 		}
 	}
-
-
 
 	int T = 100;
 	int parallel = 1;
