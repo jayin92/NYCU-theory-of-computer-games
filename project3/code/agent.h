@@ -321,8 +321,6 @@ public:
 				node = node->parent;
 			}
 		}
-
-		std::cout << cnt << std::endl;
 	}
 
 
