@@ -115,7 +115,7 @@ public:
 	double UCB1() {
 		if (visit == 0)
 			return 1e9;
-		return (double)win / (double)visit + sqrt((double)2 * (double)log(parent->visit) / double(visit));
+		return (double)win / (double)visit + (double)0.75 * sqrt((double)log(parent->visit) / double(visit));
 	}
 
 	mctsNode* parent;
@@ -170,11 +170,13 @@ public:
 		}
 		action::place best_action = action();
 		std::map<action::place, int> action_visit;
+
 		for(mctsNode* root: roots){
 			for(mctsNode* i: root->children){
 				action_visit[i->chosen_action] += i -> visit;
 			}
 		}
+
 		std::vector<std::pair<action::place, int>> action_visit_vec(action_visit.begin(), action_visit.end());
 		std::shuffle(action_visit_vec.begin(), action_visit_vec.end(), engine);
 		int max_visit = 0;
@@ -185,42 +187,17 @@ public:
 			}
 		}
 
-		for(int j=0;j<parallel;j++){
-			for(auto i: roots[j]->children){
-				if(i->chosen_action == best_action){
-					roots[j] = i;
-					i->parent = nullptr;
-					break;
-				}
-			}
-		}
-
 		return best_action;
 	}
 
 	void mcts(const board state, int thread_idx){
 		const auto threshold = std::chrono::milliseconds(T);
 		int num_of_simulations = 13500;
-		mctsNode* root = roots[thread_idx];
-		bool in_tree = false;
-		mctsNode* tmp_node = nullptr;
-		for(auto i: root->children){
-			if(i->state == state){
-				tmp_node = i;
-				tmp_node->parent = nullptr;
-				in_tree = true;
-				roots[thread_idx] = tmp_node;
-			} else {
-				delete i;
-			}
-		}
-		root = tmp_node;
+		
+		delete roots[thread_idx];
+		roots[thread_idx] = new mctsNode(state, (who == board::black ? board::white : board::black));
+		auto root = roots[thread_idx];
 
-		if(!in_tree){
-			delete roots[thread_idx];
-			roots[thread_idx] = new mctsNode(state, (who == board::black ? board::white : board::black));
-			root = roots[thread_idx];
-		}
 		auto start_time = std::chrono::high_resolution_clock::now();
 		int cnt = 0;
 		while(num_of_simulations -- && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time) < threshold){
@@ -319,6 +296,7 @@ public:
 				node = node->parent;
 			}
 		}
+		std::cout << cnt << std::endl;
 	}
 
 	int T = 100;

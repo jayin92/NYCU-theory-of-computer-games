@@ -3,5 +3,7 @@ all:
 judge:
 	cp nogo ../judge
 	cd ../judge; ./run-gogui-twogtp.sh 20
+test:
+	./nogo --total=100 --black="parallel=4 T=1500" --white="T=100" --block=1 --limit=1 --save=stats.txt
 clean:
 	rm nogo
