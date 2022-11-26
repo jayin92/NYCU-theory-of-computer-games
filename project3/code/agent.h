@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <fstream>
 #include <thread>
+#include <chrono>
 #include <cassert>
 #include "board.h"
 #include "action.h"
@@ -198,26 +199,34 @@ public:
 	}
 
 	void mcts(const board state, int thread_idx){
-		int num_of_simulations = T;
+		const auto threshold = std::chrono::milliseconds(T);
+		int num_of_simulations = 13500;
 		mctsNode* root = roots[thread_idx];
 		bool in_tree = false;
+		mctsNode* tmp_node = nullptr;
 		for(auto i: root->children){
 			if(i->state == state){
-				root = i;
-				root->parent = nullptr;
+				tmp_node = i;
+				tmp_node->parent = nullptr;
 				in_tree = true;
-				roots[thread_idx] = root;
-				break;
+				roots[thread_idx] = tmp_node;
+			} else {
+				delete i;
 			}
 		}
+		// root->children.clear();
+		// delete root;
+		root = tmp_node;
 
 		if(!in_tree){
 			delete roots[thread_idx];
 			roots[thread_idx] = new mctsNode(state, (who == board::black ? board::white : board::black));
 			root = roots[thread_idx];
 		}
-
-		while(num_of_simulations --){
+		auto start_time = std::chrono::high_resolution_clock::now();
+		int cnt = 0;
+		while(num_of_simulations -- && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time) < threshold){
+			cnt++;
 			mctsNode* node = root;
 			// std::cout << root -> visit << " " << root -> win << std::endl;
 			// std::cout << num_of_simulations << std::endl;
@@ -312,6 +321,8 @@ public:
 				node = node->parent;
 			}
 		}
+
+		std::cout << cnt << std::endl;
 	}
 
 
