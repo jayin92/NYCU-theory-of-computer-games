@@ -1,0 +1,190 @@
+\documentclass{article}[12pt]
+\usepackage{fontspec}   %加這個就可以設定字體
+\usepackage{xeCJK}       %讓中英文字體分開設置
+\usepackage{indentfirst}
+\usepackage{listings}
+\usepackage[newfloat]{minted}
+\usepackage{float}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{multirow}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{pifont}
+\usepackage{amssymb}
+\usepackage{titling}
+
+\usepackage{pdftexcmds}
+\usepackage{catchfile}
+\usepackage{ifluatex}
+\usepackage{ifplatform}
+
+\usepackage[breakable, listings, skins, minted]{tcolorbox}
+\usepackage{etoolbox}
+\setminted{fontsize=\footnotesize}
+\renewtcblisting{minted}{%
+    listing engine=minted,
+    minted language=cpp,
+    listing only,
+    breakable,
+    enhanced,
+    minted options = {
+        linenos, 
+        breaklines=true, 
+        breakbefore=., 
+        % fontsize=\footnotesize, 
+        numbersep=2mm
+    },
+    overlay={%
+        \begin{tcbclipinterior}
+            \fill[gray!25] (frame.south west) rectangle ([xshift=4mm]frame.north west);
+        \end{tcbclipinterior}
+    }   
+}
+
+\usepackage[
+top=1.5cm,
+bottom=1.5cm,
+left=2.5cm,
+right=2.5cm,
+includehead,includefoot,
+heightrounded, % to avoid spurious underfull messages
+]{geometry} 
+
+\usepackage[autostyle]{csquotes}
+
+\usepackage[
+    backend=biber,
+    style=ieee,
+    natbib=true,
+    doi=true,
+    eprint=false
+]{biblatex}
+\addbibresource{project3.bib}
+
+\newenvironment{code}{\captionsetup{type=listing}}{}
+\SetupFloatingEnvironment{listing}{name=Code}
+\usepackage[moderate]{savetrees}
+
+
+\title{TCG Project 3: NoGo}
+\author{李杰穎 110550088}
+\date{\today}
+
+
+\setCJKmainfont{Noto Serif TC}
+
+\iflinux
+\setmonofont[Mapping=tex-text]{Cascadia Code}
+\fi
+
+\ifwindows
+\setmonofont[Mapping=tex-text]{Consolas}
+\fi
+
+\XeTeXlinebreaklocale "zh"             %這兩行一定要加，中文才能自動換行
+\XeTeXlinebreakskip = 0pt plus 1pt     %這兩行一定要加，中文才能自動換行
+
+\setlength{\parindent}{2em}
+\setlength{\parskip}{2em}
+\renewcommand{\baselinestretch}{1.25}
+\setlength{\droptitle}{-10em}   % This is your set screw
+
+\begin{document}
+
+\maketitle
+
+
+
+\section{MCTS}
+
+Monte-Carlo Tree Search (MCTS) 為一種搜尋演算法，透過 UCT 公式 (\autoref{eq: uct}) 進行 Selection，再從 selection 到的節點進行 expansion 和 simulation，最後再透過 simulation 的結果 backpropagation 到路徑上各個節點。以上的步驟稱為一個 iteration，我們可以透過改變 iteration 的次數，控制 MCTS 執行的時間，此種特性使 MCTS 在許多有限制總思考時間的遊戲如 Go 和本次作業的 NoGo 成為一個非常適合的搜尋演算法。
+
+值得注意的是，MCTS 最終在挑選最佳的下一步時，是挑選探訪過最多次的節點。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\linewidth]{"img/mcts"}
+\caption{Monte-Carlo Tree Search}
+\label{fig:mcts}
+\end{figure}
+
+\begin{equation}
+\frac{w_i}{n_i}+c\,\sqrt{\frac{\ln N_i}{n_i}}
+\label{eq: uct}
+\end{equation}
+
+在本次作業中，我將每步的計算時間設為 1.5 秒，且每步最多執行 13500 個 iteration，後者的設定是避免在終局的時候搜尋過久，可能會導致 TLE 的問題。而 UCT 的 $c$ 我則參考 \cite{She2013}，將其設為 0.75。
+
+在本章中，為了實驗的快速進行，我先將每步的計算時間設為 0.1 秒。而後使用 Parallel MCTS 時，則會設為前述所提到的 1.5 秒。
+
+以下為實驗數據皆為雙方各執黑執白 10 場，總共 20 場比賽的對戰結果：
+
+\begin{table}[H]
+\centering
+\caption{Non-parallel MCTS，每一步思考時間為 0.1 秒的實驗結果}
+\label{tab:mcts-1}
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+       & 執黑 & 執白 & 總勝場 & 勝率     \\ \midrule
+Random & 10 & 10 & 20  & 100 \% \\
+Weak   & 8  & 7  & 15  & 75 \%  \\
+Strong & 0  & 0  & 0   & 0 \%   \\ \bottomrule
+\end{tabular}
+\end{table}
+
+\section{Parallel MCTS}
+
+Parallel MCTS，我參考了 \cite{5654650}，文中提到四種 parallelization 的技術中，root parallelization 的效果最好，且實作也簡單。故在編寫 parallel MCTS 的程式碼時，即採用 root parallelization 的技術。
+
+Root parallelization 的概念大致如下：每個 thread 都會進行獨立的 MCTS，不受其他 thread 的影響，而在最後決定 best action 時，則將各個 thread 的結果合併，挑出各個樹加起來探訪最多次的節點。
+
+Parallel MCTS 的實驗結果如下，thread 的個數為 4，每步的計算時間為 0.1 秒：
+
+
+\begin{table}[H]
+\centering
+\caption{Parallel MCTS，每一步思考時間為 0.1 秒、thread 個數為 4 的實驗結果}
+\label{tab:mcts-2}
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+       & 執黑 & 執白 & 總勝場 & 勝率     \\ \midrule
+Random & 10 & 10 & 20  & 100 \% \\
+Weak   & 9  & 10 & 19  & 95 \%  \\
+Strong & 1  & 0  & 1   & 5\%    \\ \bottomrule
+\end{tabular}
+\end{table}
+
+可以發現在相同執行時間的情況下，與 weak 和 strong player 對戰的勝率皆有提升。
+
+最後，我將每步的計算時間設為 1.5 秒，而跟 strong player 對戰 20 場的結果如下：
+
+\begin{table}[H]
+\centering
+\caption{Parallel MCTS，每一步思考時間為 1.5 秒、thread 個數為 4 的實驗結果}
+\label{tab:mcts-3}
+\begin{tabular}{@{}ccccc@{}}
+\toprule
+       & 執黑 & 執白 & 總勝場 & 勝率   \\ \midrule
+Strong & 9  & 6  & 15  & 75\% \\ \bottomrule
+\end{tabular}
+\end{table}
+
+可以發現勝率達到了 75 \%
+
+\section{未來展望}
+
+本次作業中，我並沒有嘗試 RAVE 這個技巧，在 \cite{She2013} 有提到綜合 MCTS 及 RAVE 的 AI 與只有 MCTS 的 AI 進行對戰的勝率高達 99.8 \%。或許可以多加嘗試。
+
+另外，我也沒有將總思考時間完美的控制在 40 秒左右，這點也是未來可以改進的方向。
+
+\printbibliography
+
+\end{document}
