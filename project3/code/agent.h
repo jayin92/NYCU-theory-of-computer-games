@@ -192,7 +192,7 @@ public:
 
 	void mcts(const board state, int thread_idx){
 		const auto threshold = std::chrono::milliseconds(T);
-		int num_of_simulations = 13500;
+		int num_of_simulations = 50000;
 		
 		delete roots[thread_idx];
 		roots[thread_idx] = new mctsNode(state, (who == board::black ? board::white : board::black));
