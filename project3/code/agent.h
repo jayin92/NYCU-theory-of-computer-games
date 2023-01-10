@@ -115,7 +115,7 @@ public:
 	double UCB1() {
 		if (visit == 0)
 			return 1e9;
-		return (double)win / (double)visit + (double)0.75 * sqrt((double)log(parent->visit) / double(visit));
+		return (double)win / (double)visit + (double)1.414 * sqrt((double)log(parent->visit) / double(visit));
 	}
 
 	mctsNode* parent;
@@ -178,7 +178,7 @@ public:
 		}
 
 		std::vector<std::pair<action::place, int>> action_visit_vec(action_visit.begin(), action_visit.end());
-		std::shuffle(action_visit_vec.begin(), action_visit_vec.end(), engine);
+		// std::shuffle(action_visit_vec.begin(), action_visit_vec.end(), engine);
 		int max_visit = 0;
 		for(auto const& i: action_visit_vec){
 			if(i.second > max_visit){
@@ -192,7 +192,7 @@ public:
 
 	void mcts(const board state, int thread_idx){
 		const auto threshold = std::chrono::milliseconds(T);
-		int num_of_simulations = 50000;
+		int num_of_simulations = 75000;
 		
 		delete roots[thread_idx];
 		roots[thread_idx] = new mctsNode(state, (who == board::black ? board::white : board::black));
@@ -296,7 +296,6 @@ public:
 				node = node->parent;
 			}
 		}
-		std::cout << cnt << std::endl;
 	}
 
 	int T = 100;
