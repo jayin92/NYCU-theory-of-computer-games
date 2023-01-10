@@ -15,9 +15,8 @@
 #include <type_traits>
 #include <algorithm>
 #include <fstream>
+#include <functional>
 #include <thread>
-#include <chrono>
-#include <cassert>
 #include "board.h"
 #include "action.h"
 
@@ -60,22 +59,22 @@ protected:
 class random_agent : public agent {
 public:
 	random_agent(const std::string& args = "") : agent(args) {
-		if (meta.find("seed") != meta.end())
-			engine.seed(int(meta["seed"]));
+		std::random_device rd;
+		engine.seed(rd());
 	}
 	virtual ~random_agent() {}
 
 protected:
-	std::default_random_engine engine;
+	std::mt19937 engine;
 };
 
 /**
  * random player for both side
  * put a legal piece randomly
  */
-class player : public random_agent {
+class random_player : public random_agent {
 public:
-	player(const std::string& args = "") : random_agent("name=random role=unknown " + args),
+	random_player(const std::string& args = "") : random_agent("name=random role=unknown " + args),
 		space(board::size_x * board::size_y), who(board::empty) {
 		if (name().find_first_of("[]():; ") != std::string::npos)
 			throw std::invalid_argument("invalid name: " + name());
@@ -97,212 +96,188 @@ public:
 		return action();
 	}
 
-private:
+protected:
 	std::vector<action::place> space;
 	board::piece_type who;
 };
 
-class mctsNode {
+/**
+ * player for both side
+ * MCTS: perform N cycles and take the best action by visit count
+ * random: put a legal piece randomly
+ */
+class player : public random_player {
 public:
-	mctsNode(const board& state, const board::piece_type player) : parent(nullptr), chosen_action(), state(state), visit(0), win(0), expand_idx(0), end_state(false), player(player) {}
-	mctsNode(mctsNode* parent, const action::place& action, const board& state, const bool end_state, const board::piece_type player) : parent(parent), chosen_action(action), 
-	state(state), visit(0), win(0),	expand_idx(0), end_state(end_state), player(player) {}
-	~mctsNode() {
-		for (auto& child : children)
-			delete child;
-	}
-
-	double UCB1() {
-		if (visit == 0)
-			return 1e9;
-		return (double)win / (double)visit + (double)1.414 * sqrt((double)log(parent->visit) / double(visit));
-	}
-
-	mctsNode* parent;
-	action::place chosen_action;
-	board state;
-	int visit;
-	int win;
-	int expand_idx;
-	bool end_state;
-	board::piece_type player;
-	std::vector<mctsNode*> children;
-};
-
-class mctsPlayer : public random_agent {
-public:
-	mctsPlayer(const std::string& args="") : random_agent("name=mcts role=unknown " + args),
-		black_space(board::size_x * board::size_y), white_space(board::size_x * board::size_y), who(board::empty){
-		if (name().find_first_of("[]():; ") != std::string::npos)
-			throw std::invalid_argument("invalid name: " + name());
-		if (role() == "black") who = board::black;
-		if (role() == "white") who = board::white;
-		if (who == board::empty)
-			throw std::invalid_argument("invalid role: " + role());
-		for (size_t i = 0; i < black_space.size(); i++){
-			black_space[i] = action::place(i, board::black);
-			white_space[i] = action::place(i, board::white);
-		}
-		if (meta.find("T") != meta.end()){
-			T = std::stoi(meta["T"]);
-		}
-
-		if (meta.find("parallel") != meta.end()){
-			parallel = std::stoi(meta["parallel"]);
-		}
-
-		for(int i=0;i<parallel;i++){
-			roots.push_back(new mctsNode(board(), (who == board::black ? board::white : board::black)));
-		}
-	}
-
-	~mctsPlayer() {
-		for(auto i: roots) delete i;
+	player(const std::string& args = "") : random_player("name=player role=unknown search=MCTS simulation=0 " + args) {
+		if (property("search") != "MCTS")
+			throw std::invalid_argument("invalid search: " + property("search"));
+		if (meta.find("timeout") != meta.end())
+			throw std::invalid_argument("invalid option: timeout");
 	}
 
 	virtual action take_action(const board& state) {
-		std::vector<std::thread> threads;
-		for(int i=0;i<parallel;i++){
-			threads.push_back(std::thread(&mctsPlayer::mcts, this, state, i));
-		}
-		for(int i=0;i<parallel;i++){
-			threads[i].join();
-		}
-		action::place best_action = action();
-		std::map<action::place, int> action_visit;
-
-		for(mctsNode* root: roots){
-			for(mctsNode* i: root->children){
-				action_visit[i->chosen_action] += i -> visit;
+		size_t N = meta["simulation"];
+		int parallel = meta["parallel"];
+		int T = meta["T"];
+		if (N){
+			std::vector<std::thread> threads;
+			std::vector<std::vector<int>> visits(parallel, std::vector<int>(81, 0));
+			std::vector<node> nodes;
+			for(int i=0;i<parallel;i++){
+				nodes.push_back(node(state));
 			}
-		}
-
-		std::vector<std::pair<action::place, int>> action_visit_vec(action_visit.begin(), action_visit.end());
-		// std::shuffle(action_visit_vec.begin(), action_visit_vec.end(), engine);
-		int max_visit = 0;
-		for(auto const& i: action_visit_vec){
-			if(i.second > max_visit){
-				max_visit = i.second;
-				best_action = i.first;
+			for(int i=0;i<parallel;i++){
+				threads.push_back(std::thread(&node::run_mcts, &nodes[i], N, T, std::ref(visits[i]), std::ref(engine)));
 			}
-		}
+			for(int i=0;i<parallel;i++){
+				threads[i].join();
+			}
 
-		return best_action;
+			std::vector<int> sum(81, 0);
+			for(auto vis: visits){
+				for(int i=0;i<81;i++){
+					sum[i] += vis[i];
+				}
+			}
+			action::place best_action = action();
+			int max_visit = 0;
+			for(int i=0;i<81;i++){
+				// std::cout << sum[i] << " ";
+				if(sum[i] >= max_visit){
+					max_visit = sum[i];
+					best_action = action::place(i, who);
+				}
+			}
+			// std::cout << std::endl;
+
+			return best_action;
+
+		}
+		return random_player::take_action(state);
 	}
 
-	void mcts(const board state, int thread_idx){
-		const auto threshold = std::chrono::milliseconds(T);
-		int num_of_simulations = 75000;
-		
-		delete roots[thread_idx];
-		roots[thread_idx] = new mctsNode(state, (who == board::black ? board::white : board::black));
-		auto root = roots[thread_idx];
+	class node : board {
+	public:
+		node(const board state, node* parent = nullptr) : board(state),
+			win(0), visit(0), child(), parent(parent) {}
 
-		auto start_time = std::chrono::high_resolution_clock::now();
-		int cnt = 0;
-		while(num_of_simulations -- && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time) < threshold){
-			cnt++;
-			mctsNode* node = root;
-			// std::cout << root -> visit << " " << root -> win << std::endl;
-			// std::cout << num_of_simulations << std::endl;
-			// selction
-			while(node->children.size() != 0 && (int)node->children.size() == node->expand_idx){
-				double max_UCB1 = -1e9;
-				mctsNode* max_node = nullptr;
-				for(auto& child : node->children){
-					double UCB1 = child->UCB1();
-					if(UCB1 > max_UCB1){
-						max_UCB1 = UCB1;
-						max_node = child;
-					}
-				}
-				node = max_node;
+		/**
+		 * run MCTS for N cycles and retrieve the best action
+		 */
+		void run_mcts(size_t N, int T, std::vector<int>& visits, std::mt19937& engine) {
+			const auto threshold = std::chrono::milliseconds(T);
+			auto start_time = std::chrono::high_resolution_clock::now();
+			for (size_t i = 0; i < N && (std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_time) < threshold); i++) {
+				std::vector<node*> path = select();
+				node* leaf = path.back()->expand(engine);
+				if (leaf != path.back()) path.push_back(leaf);
+				update(path, leaf->simulate(engine));
 			}
+			take_action(visits);
+		}
 
-			// expansion
-			if(node->end_state == false && (int)node->children.size() == 0){
-				bool no_legal_move = true;
-				auto tmp(node->player == board::black ? white_space : black_space);
-				std::shuffle(tmp.begin(), tmp.end(), engine);
-				if(node->player == board::black){
-					// std::shuffle(white_space.begin(), white_space.end(), engine);
-					for (const action::place& move : tmp) {
-						board after = node->state;
-						if (move.apply(after) == board::legal){
-							node->children.push_back(new mctsNode(node, move, after, false, board::white));
-							no_legal_move = false;
-						}
-					}
-				} else {
-					// std::shuffle(black_space.begin(), black_space.end(), engine);
-					for (const action::place& move : tmp) {
-						board after = node->state;
-						if (move.apply(after) == board::legal){
-							node->children.push_back(new mctsNode(node, move, after, false, board::black));
-							no_legal_move = false;
-						}
-					}
-				}
-				if(no_legal_move){
-					node->end_state = true;
-				}
-			}
+	protected:
 
-			// simulation
-			board::piece_type winner;
-			if(node->end_state == false){
-				int idx = node->expand_idx;
-				node->expand_idx++;
-				node = node->children[idx];
-				board::piece_type player = node->player;
-				board cur_state = node->state;
-				while(true){
-					bool no_legal_move = true;
-					auto tmp(player == board::black ? white_space : black_space);
-					std::shuffle(tmp.begin(), tmp.end(), engine);
-					if(player == board::black){
-						for (const action::place& move : tmp) {
-							board after = cur_state;
-							if (move.apply(after) == board::legal){
-								cur_state = after;
-								no_legal_move = false;
-								break;
-							}
-						}
-					} else {
-						for (const action::place& move : tmp) {
-							board after = cur_state;
-							if (move.apply(after) == board::legal){
-								cur_state = after;
-								no_legal_move = false;
-								break;
-							}
-						}
-					}
-					if(no_legal_move){
-						winner = player;
-						break;
-					}
-					player = (player == board::black ? board::white : board::black);
-				}
-			} else {
-				winner = node->player;
+		/**
+		 * select from the current node to a leaf node by UCB and return all of them
+		 * a leaf node can be either a node that is not fully expanded or a terminal node
+		 */
+		std::vector<node*> select() {
+			std::vector<node*> path = { this };
+			for (node* ndptr = this; ndptr->is_selectable(); path.push_back(ndptr)) {
+				ndptr = &*std::max_element(ndptr->child.begin(), ndptr->child.end(),
+						[=](const node& lhs, const node& rhs) { return lhs.ucb_score() < rhs.ucb_score(); });
 			}
-			
-			// backpropagation
-			while(node != nullptr){
-				node->visit++;
-				node->win += (winner == who);
-				node = node->parent;
+			return path;
+		}
+
+		/**
+		 * expand the current node and return the newly expanded child node
+		 * if the current node has no unexpanded move, it returns itself
+		 */
+		node* expand(std::mt19937& engine) {
+			board child_state = *this;
+			std::vector<int> moves = all_moves(engine);
+			auto expanded_move = std::find_if(moves.begin(), moves.end(), [&](int move) {
+				// check whether it is an unexpanded legal move
+				bool is_expanded = std::find_if(child.begin(), child.end(),
+						[&](const node& node) { return node.info().last_move_index == move; }) != child.end();
+				return is_expanded == false && child_state.place(move) == board::legal;
+			});
+			if (expanded_move == moves.end()) return this; // already terminal
+			child.emplace_back(child_state, this);
+			return &child.back();
+		}
+
+		/**
+		 * simulate the current node and return the winner
+		 */
+		unsigned simulate(std::mt19937& engine) {
+			board rollout = *this;
+			std::vector<int> moves = all_moves(engine);
+			while (std::find_if(moves.begin(), moves.end(),
+					[&](int move) { return rollout.place(move) == board::legal; }) != moves.end());
+			return (rollout.info().who_take_turns == board::white) ? board::black : board::white;
+		}
+
+		/**
+		 * update statistics for all nodes saved in the path
+		 */
+		void update(std::vector<node*>& path, unsigned winner) {
+			for (node* ndptr : path) {
+				ndptr->win += (winner == info().who_take_turns) ? 1 : 0;
+				ndptr->visit += 1;
 			}
 		}
-	}
 
-	int T = 100;
-	int parallel = 1;
-	std::vector<action::place> black_space;
-	std::vector<action::place> white_space;
-	std::vector<mctsNode*> roots;
-	board::piece_type who;
-	std::string white_args;
+		/**
+		 * pick the best action by visit counts
+		 */
+		void take_action(std::vector<int>& visits) {
+			// auto best = std::max_element(child.begin(), child.end(),
+			// 		[](const node& lhs, const node& rhs) { return lhs.visit < rhs.visit; });
+			// if (best == child.end()) return action(); // no legal move
+			// return action::place(best->info().last_move_index, info().who_take_turns);
+			for(auto i: child){
+				visits[i.info().last_move_index] += i.visit;
+			}
+		}
+
+	private:
+
+		/**
+		 * check whether this node is a fully-expanded non-terminal node
+		 */
+		bool is_selectable() const {
+			size_t num_moves = 0;
+			for (int move = 0; move < 81; move++)
+				if (board(*this).place(move) == board::legal)
+					num_moves++;
+			return child.size() == num_moves && num_moves > 0;
+		}
+
+		/**
+		 * get the ucb score of this node
+		 */
+		float ucb_score(float c = 0.75) const {
+			float exploit = float(win) / visit;
+			float explore = std::sqrt(std::log(parent->visit) / visit);
+			return exploit + c * explore;
+		}
+
+		/**
+		 * get all moves in shuffled order
+		 */
+		std::vector<int> all_moves(std::mt19937& engine) const {
+			std::vector<int> moves;
+			for (int move = 0; move < 81; move++) moves.push_back(move);
+			std::shuffle(moves.begin(), moves.end(), engine);
+			return moves;
+		}
+
+	public:
+		size_t win, visit;
+		std::vector<node> child;
+		node* parent;
+	};
 };

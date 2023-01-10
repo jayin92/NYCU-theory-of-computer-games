@@ -1,8 +1,8 @@
 #!/bin/bash
 echo "GoGui-TwoGTP Launcher V20221101"
 # commands for player 1
-P1B='./nogo --shell --name="Hollow-Black" --black="mcts parallel=4 T=1500"'
-P1W='./nogo --shell --name="Hollow-White" --white="mcts parallel=4 T=1500"'
+P1B='./nogo --shell --name="Hollow-Black" --black="parallel=35 T=1000 search=MCTS simulation=50000"'
+P1W='./nogo --shell --name="Hollow-White" --white="parallel=35 T=1000 search=MCTS simulation=50000"'
 # commands for local player 2
 P2B='./nogo-judge --shell --name="Judge-Weak-Black" --black="strong"'
 P2W='./nogo-judge --shell --name="Judge-Weak-White" --white="strong"'
@@ -12,7 +12,7 @@ P2W='./nogo-judge --shell --name="Judge-Weak-White" --white="strong"'
 
 # other settings
 games=${1:-10} # total games to play
-timelimit=40 # total thinking time in second
+timelimit=300 # total thinking time in second
 configs="-size 9 -komi 0 -auto -games $((games/2)) -verbose" # gogui-twogtp
 
 # set up environment

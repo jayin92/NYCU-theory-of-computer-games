@@ -51,6 +51,7 @@ public:
 	typedef std::array<column, size_x> grid;
 	struct data {
 		piece_type who_take_turns;
+		int last_move_index;
 	};
 	typedef uint64_t score;
 	typedef int reward;
@@ -85,7 +86,7 @@ public:
 	const cell& operator ()(unsigned i) const { point p(i); return stone[p.x][p.y]; }
 	cell& operator ()(const std::string& move) { point p(move); return stone[p.x][p.y]; }
 	const cell& operator ()(const std::string& move) const { point p(move); return stone[p.x][p.y]; }
-
+public:
 	data info() const { return attr; }
 	data info(data dat) { data old = attr; attr = dat; return old; }
 
@@ -131,6 +132,7 @@ public:
 		if (y < p_max.y && test.check_liberty(x, y + 1, opp) == 0) return nogo_move_result::illegal_take;
 		stone[x][y] = who; // is legal move!
 		attr.who_take_turns = static_cast<piece_type>(opp);
+		attr.last_move_index = point(x, y).i;
 		return nogo_move_result::legal;
 	}
 	reward place(const point& p, unsigned who = piece_type::unknown) {
@@ -286,7 +288,7 @@ protected:
 		stone[6][4] = piece_type::hollow;
 		stone[7][4] = piece_type::hollow;
 	}
-private:
+public:
 	grid stone;
 	data attr;
 };
